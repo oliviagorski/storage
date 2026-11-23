@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Storage">
+<meta name="theme-color" content="#0a6c8a">
+<title>Storage Finder</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+  /* Layout: sticky search header, room tabs, then a grid of box cards. Search results replace the room view. */
+  :root {
+    --bg: #f2f5f7;
+    --surface: #ffffff;
+    --ink: #16212b;
+    --muted: #586979;
+    --line: #d7dfe6;
+    --soft: #e8eef3;
+    --accent: #0a6c8a;
+    --accent-ink: #ffffff;
+    --mark: #ffe27a;
+    --danger: #b3261e;
+    --font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0e151b; --surface: #16202a; --ink: #e7eef3; --muted: #92a3b1; --line: #2a3844;
+      --soft: #1f2c37; --accent: #55c2e0; --accent-ink: #04222b; --mark: #6b5600; --danger: #ff9c94;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e151b; --surface: #16202a; --ink: #e7eef3; --muted: #92a3b1; --line: #2a3844;
+    --soft: #1f2c37; --accent: #55c2e0; --accent-ink: #04222b; --mark: #6b5600; --danger: #ff9c94;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: var(--font-body); font-size: 16px; line-height: 1.45;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px);
+    background: var(--surface); z-index: 30;
+  }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .bar {
+    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+    background: var(--surface); border-bottom: 1px solid var(--line);
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 12px 0;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; }
+  .top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  h1 { font-family: var(--font-display); font-size: 1.35rem; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+  .totals { color: var(--muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+
+  .search { position: relative; margin-top: 10px; }
+  .search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+  .search input {
+    width: 100%; height: 48px; padding: 0 44px 0 42px; border-radius: 10px;
+    border: 1.5px solid var(--line); background: var(--bg); font-size: 16px;
+  }
+  .search input:focus { border-color: var(--accent); outline: none; }
+  .search input::-webkit-search-cancel-button { display: none; }
+  .search .clear {
+    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    width: 40px; height: 40px; border: 0; background: transparent; color: var(--muted); font-size: 1.3rem; border-radius: 8px;
+  }
+
+  .rooms { display: flex; gap: 6px; overflow-x: auto; padding-block: 12px; scrollbar-width: none; align-items: center; }
+  .rooms::-webkit-scrollbar { display: none; }
+  .tab {
+    flex: none; min-height: 40px; padding: 0 16px; border-radius: 999px; border: 1.5px solid var(--line);
+    background: transparent; font-weight: 500; white-space: nowrap;
+  }
+  .tab[aria-current="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .tab.add { border-style: dashed; color: var(--muted); }
+  .inline-form { display: flex; gap: 6px; flex: none; }
+  .inline-form input { height: 40px; width: 180px; padding: 0 12px; border-radius: 10px; border: 1.5px solid var(--accent); background: var(--bg); }
+
+  main {
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 18px 40px;
+  }
+  .roomhead { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  h2 { font-family: var(--font-display); font-size: 1.5rem; margin: 0; letter-spacing: -0.01em; }
+  .meta { color: var(--muted); font-size: 0.88rem; margin: 2px 0 0; font-variant-numeric: tabular-nums; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .btn {
+    min-height: 40px; padding: 0 14px; border-radius: 10px; border: 1.5px solid var(--line);
+    background: var(--surface); font-weight: 500;
+  }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .btn.danger { color: var(--danger); border-color: var(--danger); background: transparent; }
+  .btn.small { min-height: 34px; padding: 0 10px; font-size: 0.88rem; }
+
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 14px; display: grid; gap: 10px; }
+  .panel form, .row-form { display: flex; gap: 8px; flex-wrap: wrap; }
+  .panel input, .row-form input {
+    flex: 1 1 180px; min-width: 0; height: 44px; padding: 0 12px; border-radius: 10px;
+    border: 1.5px solid var(--line); background: var(--bg);
+  }
+  .panel input:focus, .row-form input:focus { border-color: var(--accent); outline: none; }
+  .hint { color: var(--muted); font-size: 0.85rem; margin: 0; }
+
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr)); align-items: start; }
+  .box { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+  .box.flash { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .boxhead { display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 14px; border-bottom: 1px solid var(--line); }
+  .boxhead h3 { flex: 1; min-width: 0; margin: 0; font-family: var(--font-display); font-size: 1.1rem; overflow-wrap: anywhere; }
+  .count { color: var(--muted); font-size: 0.82rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .items { list-style: none; margin: 0; padding: 4px 14px 8px; }
+  .items li { display: flex; align-items: center; gap: 8px; min-height: 40px; border-bottom: 1px dashed var(--line); overflow-wrap: anywhere; }
+  .items li:last-child { border-bottom: 0; }
+  .items .grow { flex: 1; min-width: 0; }
+  .x { flex: none; width: 36px; height: 36px; border: 0; background: var(--soft); color: var(--danger); border-radius: 8px; font-size: 1.1rem; line-height: 1; }
+  .empty-box { color: var(--muted); padding: 12px 14px; font-size: 0.92rem; }
+  .editbody { border-top: 1px solid var(--line); padding: 12px 14px 14px; display: grid; gap: 10px; background: var(--soft); border-radius: 0 0 10px 10px; }
+  .editbody .row-form input { background: var(--surface); }
+  .editbody h4 { margin: 0; font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+
+  .results { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .results li { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; min-width: 0; }
+  .rname { font-family: var(--font-display); font-weight: 600; font-size: 1.1rem; overflow-wrap: anywhere; }
+  .locs { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .loc { min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1.5px solid var(--accent); background: transparent; color: var(--accent); font-weight: 500; }
+  .loc small { color: var(--muted); font-weight: 400; margin-right: 4px; }
+  h5 { margin: 18px 0 8px; font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 1px; }
+
+  .note { padding: 28px 16px; text-align: center; color: var(--muted); background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; }
+  .note strong { display: block; color: var(--ink); font-family: var(--font-display); font-size: 1.1rem; margin-bottom: 4px; }
+  .toast { position: sticky; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); margin-top: 14px; background: var(--danger); color: var(--surface); padding: 10px 14px; border-radius: 10px; }
+
+  .banner { background: var(--soft); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; font-size: 0.88rem; color: var(--muted); }
+  @media (prefers-reduced-motion: no-preference) { .box { transition: outline-color .2s; } }
+</style>
+
+<style>html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);-webkit-text-size-adjust:100%}body{margin:0}.signin{max-width:360px;margin:24px auto;display:grid;gap:10px}.signin input{height:48px;padding:0 12px;border-radius:10px;border:1.5px solid var(--line);background:var(--bg);font-size:16px;width:100%}</style>
+</head><body>
+<div class="bar">
+  <div class="wrap">
+    <div class="top">
+      <h1>Storage Organization</h1>
+      <span class="totals" id="totals"></span>
+    </div>
+    <div class="search">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Find an item, like “Roomba”" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Search for an item">
+      <button class="clear" id="clearq" type="button" aria-label="Clear search" hidden>×</button>
+    </div>
+    <div class="rooms" id="rooms"></div>
+  </div>
+</div>
+<main><div class="wrap" id="main"></div></main>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+/* PASTE YOUR FIREBASE SETTINGS HERE (Firebase console > Project settings > Your apps > Config) */
+var FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBS1EpR8BpV4YSr5IW5BW7TyeUS--_qg8w",
+  authDomain: "storage-organization-14189.firebaseapp.com",
+  projectId: "storage-organization-14189",
+  appId: "1:61646191664:web:c34968c6172a83bfef01f5"
+};
+</script>
+<script>
+(function () {
+  'use strict';
+  var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+  var lsGet = function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  var lsSet = function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} };
+
+  /* Copy of the list, used only if the saved list cannot be reached from this device. */
+  var SEED = {
+    rooms: [{ id: 'basement', name: 'Basement', order: 0 }, { id: 'bedroom', name: 'Bedroom', order: 1 }],
+    boxes: [
+      { id: 'basement-a', room: 'basement', name: 'Box A', items: ['Gold frames', 'Art prints', 'Roomba', 'Projector', "Parent's Recipes", 'WT duffle bag'] },
+      { id: 'basement-b', room: 'basement', name: 'Box B', items: ['Insta Pot', 'Soda Stream cylinders', 'Milk Frother', 'Blue baking dishes', 'Veggie chopper', 'Bullet blender'] },
+      { id: 'basement-c', room: 'basement', name: 'Box C', items: ['Gold frames', 'Art prints'] },
+      { id: 'basement-g', room: 'basement', name: 'Box G', items: ['Blankets', 'Memory box'] },
+      { id: 'basement-h', room: 'basement', name: 'Box H', items: ['Paraffin', 'Cat food dispenser', 'Roomba', 'Cat door portal', 'Porch gate latch', 'Couch Velcro', 'Storage cubes', 'Electric kettle base'] },
+      { id: 'basement-i', room: 'basement', name: 'Box I', items: ['Christmas tree'] }
+    ]
+  };
+
+  var state = {
+    rooms: [], boxes: [], room: lsGet('so-room'), q: '', editing: null, roomOpts: false,
+    auth: 'pending', addingBox: false, addingRoom: false, confirm: null, err: '', unavailable: false,
+    loaded: { rooms: false, boxes: false }, timedOut: false, drafts: {}
+  };
+  var db = null, queue = {}, errTimer = null, flashTimer = null;
+
+  var elMain = document.getElementById('main');
+  var elRooms = document.getElementById('rooms');
+  var elQ = document.getElementById('q');
+  var elClear = document.getElementById('clearq');
+  var elTotals = document.getElementById('totals');
+
+  /* ---------- derived data ---------- */
+  function roomsSorted() {
+    return state.rooms.slice().sort(function (a, b) {
+      return ((a.order || 0) - (b.order || 0)) || String(a.name).localeCompare(String(b.name));
+    });
+  }
+  function boxesIn(roomId) {
+    return state.boxes.filter(function (b) { return b.room === roomId; }).sort(function (a, b) {
+      return String(a.name).localeCompare(String(b.name), undefined, { numeric: true, sensitivity: 'base' });
+    });
+  }
+  function itemsOf(b) { return Array.isArray(b.items) ? b.items : []; }
+  function plural(n, w) { return n + ' ' + w + (n === 1 ? '' : (w === 'box' ? 'es' : 's')); }
+  function hl(text, needle) {
+    var t = String(text), i = t.toLowerCase().indexOf(needle);
+    if (i < 0 || !needle) return esc(t);
+    return esc(t.slice(0, i)) + '<mark>' + esc(t.slice(i, i + needle.length)) + '</mark>' + esc(t.slice(i + needle.length));
+  }
+  function val(id, def) { return Object.prototype.hasOwnProperty.call(state.drafts, id) ? state.drafts[id] : (def || ''); }
+
+  /* ---------- writes ---------- */
+  function enqueue(key, fn) {
+    var prev = queue[key] || Promise.resolve();
+    var p = prev.then(fn).catch(fail);
+    queue[key] = p;
+    return p;
+  }
+  function fail(e) {
+    state.err = (e && e.code === 'quota_exceeded')
+      ? 'Storage is full. Delete something and try again.'
+      : 'That change did not save. Check your connection and try again.';
+    renderMain();
+    clearTimeout(errTimer);
+    errTimer = setTimeout(function () { state.err = ''; renderMain(); }, 6000);
+  }
+  function findBox(id) { return state.boxes.filter(function (b) { return b.id === id; })[0]; }
+
+  function addItems(boxId, text) {
+    var parts = String(text).split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    if (!parts.length) return;
+    if (state.mode === 'local') { var lb = findBox(boxId); if (lb) { lb.items = itemsOf(lb).concat(parts); persistLocal(); } return; }
+    enqueue('box:' + boxId, function () {
+      var b = findBox(boxId); if (!b) return;
+      return db.doc('boxes/' + boxId).update({ items: itemsOf(b).concat(parts) });
+    });
+  }
+  function removeItem(boxId, idx, name) {
+    if (state.mode === 'local') {
+      var lb = findBox(boxId); if (!lb) return;
+      var li = itemsOf(lb).slice(); var k = li[idx] === name ? idx : li.indexOf(name);
+      if (k < 0) return;
+      li.splice(k, 1); lb.items = li; persistLocal(); return;
+    }
+    enqueue('box:' + boxId, function () {
+      var b = findBox(boxId); if (!b) return;
+      var items = itemsOf(b).slice();
+      var i = items[idx] === name ? idx : items.indexOf(name);
+      if (i < 0) return;
+      items.splice(i, 1);
+      return db.doc('boxes/' + boxId).update({ items: items });
+    });
+  }
+  function renameBox(boxId, name) {
+    if (state.mode === 'local') { var lb = findBox(boxId); if (lb) { lb.name = name; persistLocal(); } return; }
+    enqueue('box:' + boxId, function () { return db.doc('boxes/' + boxId).update({ name: name }); });
+  }
+  function deleteBox(boxId) {
+    if (state.mode === 'local') { state.boxes = state.boxes.filter(function (b) { return b.id !== boxId; }); persistLocal(); return; }
+    enqueue('box:' + boxId, function () { return db.doc('boxes/' + boxId).delete(); });
+  }
+  function addBox(roomId, name) {
+    if (state.mode === 'local') {
+      var nb = { id: 'box-' + Math.random().toString(36).slice(2, 8), room: roomId, name: name, items: [] };
+      state.boxes.push(nb); state.editing = nb.id; persistLocal(); return Promise.resolve();
+    }
+    return enqueue('boxes', function () {
+      return db.collection('boxes').add({ room: roomId, name: name, items: [] }).then(function (ref) {
+        state.editing = ref.id; renderMain();
+      });
+    });
+  }
+  function slug(s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'room'; }
+  function addRoom(name) {
+    var order = state.rooms.reduce(function (m, r) { return Math.max(m, r.order || 0); }, -1) + 1;
+    var id = slug(name) + '-' + Math.random().toString(36).slice(2, 6);
+    state.room = id; lsSet('so-room', id);
+    if (state.mode === 'local') { state.rooms.push({ id: id, name: name, order: order }); persistLocal(); return Promise.resolve(); }
+    return enqueue('rooms', function () { return db.doc('rooms/' + id).set({ name: name, order: order }); });
+  }
+  function renameRoom(id, name) {
+    if (state.mode === 'local') { state.rooms.forEach(function (r) { if (r.id === id) r.name = name; }); persistLocal(); return; }
+    enqueue('room:' + id, function () { return db.doc('rooms/' + id).update({ name: name }); });
+  }
+  function deleteRoom(id) {
+    if (state.mode === 'local') {
+      state.boxes = state.boxes.filter(function (b) { return b.room !== id; });
+      state.rooms = state.rooms.filter(function (r) { return r.id !== id; });
+      persistLocal(); return;
+    }
+    var boxes = boxesIn(id);
+    enqueue('room:' + id, function () {
+      return boxes.reduce(function (p, b) { return p.then(function () { return db.doc('boxes/' + b.id).delete(); }); }, Promise.resolve())
+        .then(function () { return db.doc('rooms/' + id).delete(); });
+    });
+  }
+
+  /* ---------- rendering ---------- */
+  function renderRooms() {
+    var rooms = roomsSorted();
+    var h = rooms.map(function (r) {
+      return '<button class="tab" type="button" data-a="room" data-id="' + esc(r.id) + '"' +
+        (r.id === state.room && !state.q ? ' aria-current="true"' : '') + '>' + esc(r.name) + '</button>';
+    }).join('');
+    if (state.addingRoom) {
+      h += '<form class="inline-form" data-form="add-room"><input id="newroom" placeholder="Room name" value="' + esc(val('newroom')) + '" autocomplete="off" aria-label="New room name">' +
+        '<button class="btn primary" type="submit">Add</button><button class="btn" type="button" data-a="add-room-close">Cancel</button></form>';
+    } else {
+      h += '<button class="tab add" type="button" data-a="add-room-open">+ Room</button>';
+    }
+    elRooms.innerHTML = h;
+    var nr = document.getElementById('newroom');
+    if (nr && state.focusNewRoom) { nr.focus(); state.focusNewRoom = false; }
+  }
+
+  function renderTotals() {
+    var items = state.boxes.reduce(function (n, b) { return n + itemsOf(b).length; }, 0);
+    elTotals.textContent = state.loaded.boxes ? plural(state.rooms.length, 'room') + ' · ' + plural(state.boxes.length, 'box') + ' · ' + plural(items, 'item') : '';
+  }
+
+  function resultsHtml() {
+    var needle = state.q.trim().toLowerCase();
+    var roomName = {};
+    state.rooms.forEach(function (r) { roomName[r.id] = r.name; });
+    var groups = {}, order = [], boxHits = [];
+    state.boxes.forEach(function (b) {
+      if (!(b.room in roomName)) return;
+      var loc = { room: b.room, roomName: roomName[b.room], box: b.id, boxName: b.name };
+      if (String(b.name).toLowerCase().indexOf(needle) >= 0) boxHits.push(loc);
+      itemsOf(b).forEach(function (it) {
+        if (String(it).toLowerCase().indexOf(needle) < 0) return;
+        var k = String(it).toLowerCase();
+        if (!groups[k]) { groups[k] = { name: it, locs: [] }; order.push(k); }
+        groups[k].locs.push(loc);
+      });
+    });
+    order.sort(function (a, b) {
+      var sa = a.indexOf(needle) === 0 ? 0 : 1, sb = b.indexOf(needle) === 0 ? 0 : 1;
+      return (sa - sb) || a.localeCompare(b);
+    });
+    function locBtn(l) {
+      return '<button class="loc" type="button" data-a="goto" data-room="' + esc(l.room) + '" data-box="' + esc(l.box) + '"><small>' + esc(l.roomName) + '</small>' + esc(l.boxName) + '</button>';
+    }
+    if (!order.length && !boxHits.length) {
+      return '<div class="note"><strong>Nothing matches “' + esc(state.q.trim()) + '”</strong>Try a shorter word or check the spelling.</div>';
+    }
+    var h = '';
+    if (order.length) {
+      h += '<p class="meta">' + plural(order.length, 'item') + ' found. Tap a location to open that box.</p><ul class="results">' +
+        order.map(function (k) {
+          var g = groups[k];
+          return '<li><div class="rname">' + hl(g.name, needle) + '</div><div class="locs">' + g.locs.map(locBtn).join('') + '</div></li>';
+        }).join('') + '</ul>';
+    }
+    if (boxHits.length) {
+      h += '<h5>Boxes named like that</h5><ul class="results">' + boxHits.map(function (l) {
+        return '<li><div class="locs" style="margin:0">' + locBtn(l) + '</div></li>';
+      }).join('') + '</ul>';
+    }
+    return h;
+  }
+
+  function boxHtml(b) {
+    var items = itemsOf(b), editing = state.editing === b.id;
+    var h = '<article class="box" id="box-' + esc(b.id) + '"><div class="boxhead"><h3>' + esc(b.name) + '</h3><span class="count">' + plural(items.length, 'item') + '</span>' +
+      '<button class="btn small' + (editing ? ' primary' : '') + '" type="button" data-a="edit" data-id="' + esc(b.id) + '">' + (editing ? 'Done' : 'Edit') + '</button></div>';
+    if (!items.length) {
+      h += '<div class="empty-box">Empty. Tap Edit to add what is inside.</div>';
+    } else {
+      h += '<ul class="items">' + items.map(function (it, i) {
+        return '<li><span class="grow">' + esc(it) + '</span>' + (editing
+          ? '<button class="x" type="button" aria-label="Remove ' + esc(it) + '" data-a="rm-item" data-id="' + esc(b.id) + '" data-i="' + i + '" data-name="' + esc(it) + '">×</button>' : '') + '</li>';
+      }).join('') + '</ul>';
+    }
+    if (editing) {
+      var ck = 'box:' + b.id;
+      h += '<div class="editbody"><div><h4>Add items</h4><form class="row-form" data-form="add-items" data-id="' + esc(b.id) + '" style="margin-top:6px">' +
+        '<input id="add-' + esc(b.id) + '" placeholder="e.g. Hammer, tape measure" value="' + esc(val('add-' + b.id)) + '" autocomplete="off" aria-label="Add items to ' + esc(b.name) + '">' +
+        '<button class="btn primary" type="submit">Add</button></form><p class="hint" style="margin-top:6px">Separate several items with commas.</p></div>' +
+        '<div><h4>Box name</h4><form class="row-form" data-form="rename-box" data-id="' + esc(b.id) + '" style="margin-top:6px">' +
+        '<input id="name-' + esc(b.id) + '" value="' + esc(val('name-' + b.id, b.name)) + '" autocomplete="off" aria-label="Box name">' +
+        '<button class="btn" type="submit">Save</button></form></div>' +
+        '<div>' + (state.confirm === ck
+          ? '<p class="hint" style="margin-bottom:8px">Delete ' + esc(b.name) + ' and everything listed in it?</p><div class="actions"><button class="btn danger" type="button" data-a="del-box" data-id="' + esc(b.id) + '">Yes, delete box</button><button class="btn" type="button" data-a="cancel-ask">Keep it</button></div>'
+          : '<button class="btn danger small" type="button" data-a="ask" data-key="' + ck + '">Delete this box</button>') + '</div></div>';
+    }
+    return h + '</article>';
+  }
+
+  function roomHtml() {
+    var rooms = roomsSorted();
+    if (!rooms.length) {
+      return '<div class="note"><strong>No rooms yet</strong>Add your first room with the + Room button above, or load the Basement boxes from your spreadsheet.<div style="margin-top:12px"><button class="btn primary" type="button" data-a="seed">Load my Basement boxes</button></div></div>';
+    }
+    var room = rooms.filter(function (r) { return r.id === state.room; })[0] || rooms[0];
+    var boxes = boxesIn(room.id);
+    var count = boxes.reduce(function (n, b) { return n + itemsOf(b).length; }, 0);
+    var h = '<section class="roomhead"><div><h2>' + esc(room.name) + '</h2><p class="meta">' + plural(boxes.length, 'box') + ' · ' + plural(count, 'item') + '</p></div>' +
+      '<div class="actions"><button class="btn primary" type="button" data-a="add-box-open">New box</button>' +
+      '<button class="btn" type="button" data-a="room-opts">' + (state.roomOpts ? 'Close options' : 'Room options') + '</button></div></section>';
+    if (state.roomOpts) {
+      var ck = 'room:' + room.id;
+      h += '<div class="panel"><form data-form="rename-room" data-id="' + esc(room.id) + '"><input id="roomname" value="' + esc(val('roomname', room.name)) + '" autocomplete="off" aria-label="Room name"><button class="btn" type="submit">Rename room</button></form>' +
+        (state.confirm === ck
+          ? '<p class="hint">Delete ' + esc(room.name) + ' with ' + plural(boxes.length, 'box') + ' and all their items?</p><div class="actions"><button class="btn danger" type="button" data-a="del-room" data-id="' + esc(room.id) + '">Yes, delete room</button><button class="btn" type="button" data-a="cancel-ask">Keep it</button></div>'
+          : '<div><button class="btn danger small" type="button" data-a="ask" data-key="' + ck + '">Delete this room</button></div>') + '</div>';
+    }
+    if (state.addingBox) {
+      h += '<div class="panel"><form data-form="add-box" data-id="' + esc(room.id) + '"><input id="newbox" placeholder="Box or bin name, like Box D" value="' + esc(val('newbox')) + '" autocomplete="off" aria-label="New box name">' +
+        '<button class="btn primary" type="submit">Create box</button><button class="btn" type="button" data-a="add-box-close">Cancel</button></form></div>';
+    }
+    if (!boxes.length) {
+      h += '<div class="note"><strong>No boxes in ' + esc(room.name) + ' yet</strong>Tap New box, then list what is inside it.</div>';
+    } else {
+      h += '<div class="grid">' + boxes.map(boxHtml).join('') + '</div>';
+    }
+    return h;
+  }
+
+  function signinHtml() {
+    return '<form class="signin" data-form="signin"><h2>Sign in</h2><p class="hint">Use the email and password you created in Firebase.</p>' +
+      '<input id="su-email" type="email" placeholder="Email" autocomplete="username" value="' + esc(val('su-email')) + '" aria-label="Email">' +
+      '<input id="su-pass" type="password" placeholder="Password" autocomplete="current-password" aria-label="Password">' +
+      '<button class="btn primary" type="submit">Sign in</button>' +
+      (state.signinErr ? '<p class="hint" style="color:var(--danger)">' + esc(state.signinErr) + '</p>' : '') + '</form>';
+  }
+  function buildMain() {
+    if (String(FIREBASE_CONFIG.apiKey).indexOf('PASTE') === 0) {
+      return '<div class="note"><strong>Firebase is not set up yet</strong>Paste your Firebase settings near the top of this file, then reload.</div>';
+    }
+    if (state.auth === 'pending') return '<div class="note"><strong>Loading</strong>One moment.</div>';
+    if (state.auth === 'out') return signinHtml();
+    if (state.unavailable) {
+      return '<div class="note"><strong>Saved boxes are not available here</strong>Open this page while signed in to Claude to see and change your storage list.</div>';
+    }
+    if (!state.loaded.rooms || !state.loaded.boxes) {
+      return '<div class="note"><strong>' + (state.timedOut ? 'Still trying to reach your saved list' : 'Loading your boxes') + '</strong>' +
+        (state.timedOut ? 'Check your connection. This page keeps trying.' : 'One moment.') + (state.lastErr ? ' Error: ' + esc(state.lastErr) : '') + '</div>';
+    }
+    return state.q.trim() ? resultsHtml() : roomHtml();
+  }
+
+  function renderMain() {
+    var a = document.activeElement, fid = null, ss = 0;
+    if (a && a.id && elMain.contains(a)) { fid = a.id; ss = a.selectionStart || 0; }
+    elMain.innerHTML = banner() + buildMain() + (state.err ? '<div class="toast" role="alert">' + esc(state.err) + '</div>' : '');
+    if (fid) {
+      var el = document.getElementById(fid);
+      if (el) { el.focus(); try { el.setSelectionRange(ss, ss); } catch (e) {} }
+    }
+    if (state.focusId) {
+      var f = document.getElementById(state.focusId);
+      if (f) f.focus();
+      state.focusId = null;
+    }
+  }
+  function persistLocal() {
+    state.dirty = true;
+    lsSet('so-local', JSON.stringify({ rooms: state.rooms, boxes: state.boxes }));
+    renderAll();
+  }
+  function goLocal() {
+    if (state.mode) return;
+    var saved = null;
+    try { saved = JSON.parse(lsGet('so-local') || 'null'); } catch (e) { saved = null; }
+    var d = (saved && saved.rooms && saved.boxes) ? saved : SEED;
+    state.rooms = JSON.parse(JSON.stringify(d.rooms));
+    state.boxes = JSON.parse(JSON.stringify(d.boxes));
+    state.dirty = !!(saved && saved.rooms);
+    state.loaded.rooms = true; state.loaded.boxes = true; state.mode = 'local';
+    ensureRoom(); renderAll();
+  }
+  function banner() {
+    var h = banner0();
+    return (h && state.diag) ? h.replace(/<\/div>$/, '<div style="margin-top:6px;font-size:0.8rem">Details: ' + esc(state.diag) + '</div></div>') : h;
+  }
+  function banner0() {
+    if (state.mode !== 'local') return '';
+    if (state.dirty) {
+      var ready = state.dbRooms && state.dbBoxes;
+      return '<div class="banner">Changes made here are stored on this device only. ' +
+        (ready ? 'Your saved list is reachable now. <button class="btn small" type="button" data-a="use-synced" style="margin-top:8px">Switch to the saved list</button>'
+               : 'Your saved list could not be reached yet.') + '</div>';
+    }
+    if (state.offline) return '<div class="banner">Your saved list could not be reached, so this is a copy stored on this device. It switches over automatically if the connection comes back.</div>';
+    return '';
+  }
+  function renderAll() { renderRooms(); renderTotals(); renderMain(); }
+
+  /* ---------- events ---------- */
+  elQ.addEventListener('input', function () {
+    state.q = elQ.value; elClear.hidden = !elQ.value;
+    renderRooms(); renderMain();
+  });
+  elClear.addEventListener('click', function () {
+    elQ.value = ''; state.q = ''; elClear.hidden = true; renderRooms(); renderMain(); elQ.focus();
+  });
+  document.addEventListener('input', function (e) {
+    if (e.target && e.target.id && e.target.closest('#main, #rooms')) state.drafts[e.target.id] = e.target.value;
+  });
+
+  function leaveSearch() { elQ.value = ''; state.q = ''; elClear.hidden = true; }
+
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-a]'); if (!t) return;
+    var a = t.dataset.a, id = t.dataset.id;
+    if (a === 'room') {
+      leaveSearch(); state.room = id; lsSet('so-room', id); state.editing = null; state.addingBox = false; state.roomOpts = false; state.confirm = null;
+      renderAll();
+    } else if (a === 'add-room-open') { state.addingRoom = true; state.focusNewRoom = true; renderRooms();
+    } else if (a === 'add-room-close') { state.addingRoom = false; delete state.drafts.newroom; renderRooms();
+    } else if (a === 'add-box-open') { state.addingBox = true; state.focusId = 'newbox'; renderMain();
+    } else if (a === 'add-box-close') { state.addingBox = false; delete state.drafts.newbox; renderMain();
+    } else if (a === 'room-opts') { state.roomOpts = !state.roomOpts; state.confirm = null; renderMain();
+    } else if (a === 'edit') {
+      state.editing = state.editing === id ? null : id; state.confirm = null;
+      if (state.editing) state.focusId = 'add-' + id;
+      renderMain();
+    } else if (a === 'rm-item') { removeItem(id, Number(t.dataset.i), t.dataset.name);
+    } else if (a === 'ask') { state.confirm = t.dataset.key; renderMain();
+    } else if (a === 'cancel-ask') { state.confirm = null; renderMain();
+    } else if (a === 'del-box') { state.confirm = null; state.editing = null; deleteBox(id); renderMain();
+    } else if (a === 'del-room') { state.confirm = null; state.roomOpts = false; deleteRoom(id); renderMain();
+    } else if (a === 'seed') {
+      var batch = db.batch();
+      SEED.rooms.forEach(function (r) { batch.set(db.doc('rooms/' + r.id), { name: r.name, order: r.order }); });
+      SEED.boxes.forEach(function (b) { batch.set(db.doc('boxes/' + b.id), { room: b.room, name: b.name, items: b.items }); });
+      batch.commit().catch(fail);
+    } else if (a === 'use-synced') {
+      lsSet('so-local', ''); state.rooms = state.dbRooms; state.boxes = state.dbBoxes; state.mode = 'db'; state.dirty = false; ensureRoom(); renderAll();
+    } else if (a === 'goto') {
+      leaveSearch(); state.room = t.dataset.room; lsSet('so-room', state.room); state.editing = null; state.addingBox = false; state.roomOpts = false;
+      renderAll();
+      var el = document.getElementById('box-' + t.dataset.box);
+      if (el) {
+        el.scrollIntoView({ block: 'center' });
+        el.classList.add('flash');
+        clearTimeout(flashTimer);
+        flashTimer = setTimeout(function () { el.classList.remove('flash'); }, 2500);
+      }
+    }
+  });
+
+  document.addEventListener('submit', function (e) {
+    var f = e.target.closest('[data-form]'); if (!f) return;
+    e.preventDefault();
+    var kind = f.dataset.form, id = f.dataset.id, input = f.querySelector('input');
+    if (kind === 'signin') {
+      var em = document.getElementById('su-email').value.trim(), pw = document.getElementById('su-pass').value;
+      if (!em || !pw) return;
+      state.signinErr = '';
+      firebase.auth().signInWithEmailAndPassword(em, pw).catch(function (er) {
+        state.signinErr = (er && er.code === 'auth/network-request-failed') ? 'No connection. Try again.' : 'That email or password did not work.';
+        renderMain();
+      });
+      return;
+    }
+    var v = input ? input.value.trim() : '';
+    if (!v) return;
+    if (kind === 'add-room') { delete state.drafts.newroom; state.addingRoom = false; addRoom(v); renderAll();
+    } else if (kind === 'add-box') { delete state.drafts.newbox; state.addingBox = false; addBox(id, v); renderMain();
+    } else if (kind === 'add-items') { delete state.drafts['add-' + id]; input.value = ''; addItems(id, v); input.focus();
+    } else if (kind === 'rename-box') { delete state.drafts['name-' + id]; renameBox(id, v);
+    } else if (kind === 'rename-room') { delete state.drafts.roomname; renameRoom(id, v); }
+  });
+
+  /* ---------- data ---------- */
+  function ensureRoom() {
+    var rooms = roomsSorted();
+    if (rooms.length && !rooms.some(function (r) { return r.id === state.room; })) state.room = rooms[0].id;
+  }
+  function start() {
+    var timer = setTimeout(function () {
+      if (!state.loaded.rooms || !state.loaded.boxes) { state.timedOut = true; renderMain(); }
+    }, 10000);
+    function onErr(e) {
+      clearTimeout(timer);
+      state.lastErr = (e && e.code) ? e.code : 'unknown';
+      state.diag = 'error ' + state.lastErr + (e && e.message ? ': ' + e.message : '');
+            renderAll();
+    }
+    function conv(s) { return s.docs.map(function (d) { var o = d.data() || {}; o.id = d.id; return o; }); }
+    function applyRooms(s) { state.dbRooms = conv(s); if (state.mode === 'local' && state.dirty) return; state.mode = 'db'; state.rooms = conv(s); state.loaded.rooms = true; ensureRoom(); clearTimeout(timer); renderAll(); }
+    function applyBoxes(s) { state.dbBoxes = conv(s); if (state.mode === 'local' && state.dirty) return; state.mode = 'db'; state.boxes = conv(s); state.loaded.boxes = true; clearTimeout(timer); renderAll(); }
+    db.collection('rooms').onSnapshot(applyRooms, onErr);
+    db.collection('boxes').onSnapshot(applyBoxes, onErr);
+    var tries = 0;
+    function poll() {
+      if (state.loaded.rooms && state.loaded.boxes) return;
+      tries++;
+      if (!state.loaded.rooms) db.collection('rooms').get().then(function (s) { if (!state.loaded.rooms) applyRooms(s); }, onErr);
+      if (!state.loaded.boxes) db.collection('boxes').get().then(function (s) { if (!state.loaded.boxes) applyBoxes(s); }, onErr);
+      if (tries < 12) setTimeout(poll, 5000);
+    }
+    poll();
+  }
+
+  renderAll();
+  if (String(FIREBASE_CONFIG.apiKey).indexOf('PASTE') === 0) return;
+  try {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore();
+    try { db.enablePersistence({ synchronizeTabs: true }).catch(function () {}); } catch (e) {}
+  } catch (e) { state.diag = String(e && e.message || e); state.auth = 'out'; renderAll(); return; }
+  var started = false;
+  firebase.auth().onAuthStateChanged(function (u) {
+    if (u) { state.auth = 'in'; if (!started) { started = true; start(); } }
+    else { state.auth = 'out'; }
+    renderAll();
+  });
+})();
+</script>
+</body></html>
